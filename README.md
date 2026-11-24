@@ -1,33 +1,51 @@
-# Khonshu — Path Planning
+# Khonshu Path Planner
 
-Path-planning algorithms for the autonomous Formula Student car developed by **Strathmore Racing Club | FS-AI DDT**.
+Khonshu is the path-planning project for the Strathmore University autonomous Formula Student car. It turns perceived cone positions and vehicle state into a safe, smooth path for the car to follow.
 
-## Purpose
+The long-term goal is a ROS 2 planner that runs in the EUFS simulator and on the real car, with track estimation, smooth waypoint generation, and speed planning.
 
-Khonshu is the planning layer between perception/localisation and vehicle control. It transforms detected cone positions and vehicle state into a safe, smooth, and drivable trajectory for the car to follow.
+## Project setup
 
-The planner is responsible for:
+Requires Python 3.8 or newer.
 
-- Estimating the track and generating a usable centreline from cone observations.
-- Producing smooth waypoints and a feasible target-speed profile.
-- Supporting reliable autonomous driving when the track is only partially observed.
-- Evolving from a robust exploratory centreline into an optimised racing line as more track information becomes available.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
 
-## Initial Focus
+For development and tests:
 
-The first milestone is a dependable baseline planner that can complete autonomous laps in simulation. Development will initially focus on:
+```bash
+python -m pip install -e ".[dev]"
+```
 
-1. Track and centreline estimation.
-2. Trajectory smoothing.
-3. Basic velocity profiling.
-4. ROS 2 integration and visualisation.
+## Run the demo
 
-The implementation will be tested independently in simulation before being connected to the full perception, localisation, and control stack.
+The demo generates a synthetic track, plots the cones and centreline, and saves it as `demo_track.png`:
 
-## Status
+```bash
+python scripts/demo_track.py
+```
 
-Early development. This repository will grow to include the planning algorithms, simulation interfaces, visualisation tools, benchmarks, and documentation required to validate the autonomous system.
+## Package
 
-## Team
+The `planner` package contains:
 
-Built by the Path Planning sub-team of **Strathmore Racing Club | FS-AI DDT** for Formula Student autonomous events.
+- `planner.cones`: cone and track observation data structures.
+- `planner.fake_tracks`: generated test tracks for development.
+
+Example:
+
+```python
+from planner.fake_tracks import straight_then_turn
+
+cones, centreline = straight_then_turn()
+```
+
+## ROS 2 and EUFS simulation
+
+This repository is currently being developed as a standalone Python planner. ROS 2 nodes and the EUFS Sim integration will connect cone detections and localisation inputs to planned trajectories and vehicle control.
+
+The planning pipeline should be validated in EUFS Sim before deployment to the real car.

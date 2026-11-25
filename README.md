@@ -1,10 +1,39 @@
 # Khonshu Path Planner
 
-Khonshu is the path-planning project for the Strathmore University autonomous Formula Student car. It turns perceived cone positions and vehicle state into a safe, smooth path for the car to follow.
+Khonshu is a Python path-planning project for the Strathmore University autonomous Formula Student car. It provides small, testable building blocks for working with cone observations, vehicle transforms, and an initial centreline estimate.
 
-The long-term goal is a ROS 2 planner that runs in the EUFS simulator and on the real car, with track estimation, smooth waypoint generation, and speed planning.
+This repository is currently an algorithm and simulation prototype. It is not yet a ROS 2 node or an integrated EUFS Sim planner.
 
-## Project setup
+## Features
+
+- Represent and generate blue/yellow cone observations.
+- Generate a synthetic straight-and-left-turn track for development.
+- Convert points and cone observations between map and car coordinates.
+- Filter cone observations to a configurable region ahead of the vehicle.
+- Build a Delaunay triangulation and find valid blue-yellow cone pairs.
+- Estimate centreline points and track widths from matching cone pairs.
+
+## Demo gallery
+
+### Synthetic track
+
+The synthetic track contains blue and yellow cone sides, plus the true centreline.
+
+![Synthetic Formula Student track](demo_track.png)
+
+### Map and car frames
+
+The transform demo shows the vehicle pose in the map frame and the cones in a filtered vehicle frame.
+
+![Map and car coordinate frames](demo_transform.png)
+
+### Centreline triangulation
+
+The triangulation demo uses Delaunay edges between blue and yellow cones to derive centreline midpoints.
+
+![Triangulation and detected centreline edges](demo_triangulation.png)
+
+## Installation
 
 Requires Python 3.8 or newer.
 
@@ -15,37 +44,94 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-For development and tests:
+For test dependencies:
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-## Run the demo
+## Run the demos
 
-The demo generates a synthetic track, plots the cones and centreline, and saves it as `demo_track.png`:
+Each demo is headless and writes a PNG in the repository root:
 
 ```bash
 python scripts/demo_track.py
+python scripts/demo_transform.py
+python scripts/demo_triangulation.py
 ```
 
-## Package
+Run all demos from the repository root.
 
-The `planner` package contains:
+## API examples
 
-- `planner.cones`: cone and track observation data structures.
-- `planner.fake_tracks`: generated test tracks for development.
-
-Example:
+Generate a synthetic track:
 
 ```python
 from planner.fake_tracks import straight_then_turn
 
-cones, centreline = straight_then_turn()
+cones, centreline = straight_then_turn(
+    straight=18.0,
+    radius=10.0,
+    turn_deg=180.0,
+    half_width=1.5,
+)
 ```
 
-## ROS 2 and EUFS simulation
+`cones.blue` and `cones.yellow` are NumPy arrays shaped `(n, 2)`. `centreline` is the NumPy array of true track centre points in the same two-dimensional coordinate system.
 
-This repository is currently being developed as a standalone Python planner. ROS 2 nodes and the EUFS Sim integration will connect cone detections and localisation inputs to planned trajectories and vehicle control.
+Convert observations into the vehicle frame and retain nearby cones ahead:
 
-The planning pipeline should be validated in EUFS Sim before deployment to the real car.
+```python
+from planner.transforms import cones_to_car, filter_ahead
+
+car_cones = cones_to_car(cones, car_xy=(20.0, 1.0), car_yaw=0.5)
+nearby_cones = filter_ahead(
+    car_cones,
+    x_min=-2.0,
+    x_max=15.0,
+    y_max=8.0,
+)
+```
+
+Estimate centreline midpoints and track widths:
+
+```python
+from planner.triangulation import triangulate, blue_yellow_edges
+
+points, triangles = triangulate(cones)
+edges = blue_yellow_edges(
+    cones,
+    min_edge=2.0,
+    max_edge=4.0,
+)
+
+midpoints = edges.midpoints
+track_widths = edges.widths
+```
+
+`Edges` also contains `blue_idx`, `yellow_idx`, and `midpoints`, which link each estimated centreline point to its paired blue and yellow cones.
+
+## Package layout
+
+- `planner/cones.py`: `Cones` observation container.
+- `planner/fake_tracks.py`: synthetic track generation.
+- `planner/transforms.py`: coordinate transformations and filtering.
+- `planner/triangulation.py`: Delaunay triangulation and blue-yellow matching.
+- `scripts/`: runnable demos.
+- `tests/`: pytest coverage for synthetic tracks, transforms, and triangulation.
+
+## Testing
+
+```bash
+python -m pytest
+```
+
+## Future integration
+
+The next stage is to turn these building blocks into a complete planner and integrate it with ROS 2 and EUFS Sim. The intended pipeline is:
+
+1. Consume cone detections and vehicle localisation.
+2. Estimate the track centreline and boundaries.
+3. Generate smooth waypoints.
+4. Plan and validate a speed profile.
+5. Publish a trajectory or control commands.

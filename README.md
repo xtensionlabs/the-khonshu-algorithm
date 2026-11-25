@@ -12,6 +12,7 @@ This repository is currently an algorithm and simulation prototype. It is not ye
 - Filter cone observations to a configurable region ahead of the vehicle.
 - Build a Delaunay triangulation and find valid blue-yellow cone pairs.
 - Estimate centreline points and track widths from matching cone pairs.
+- Order centreline points using a direction-aware greedy search that follows bends and turns.
 
 ## Demo gallery
 
@@ -32,6 +33,12 @@ The transform demo shows the vehicle pose in the map frame and the cones in a fi
 The triangulation demo uses Delaunay edges between blue and yellow cones to derive centreline midpoints.
 
 ![Triangulation and detected centreline edges](demo_triangulation.png)
+
+### Ordered centreline
+
+The centreline demo compares sorting by x with a greedy, heading-aware path builder. It also demonstrates planning from a car positioned partway through a turn.
+
+![Ordered centreline in map and car frames](demo_centerline.png)
 
 ## Installation
 
@@ -58,6 +65,7 @@ Each demo is headless and writes a PNG in the repository root:
 python scripts/demo_track.py
 python scripts/demo_transform.py
 python scripts/demo_triangulation.py
+python scripts/demo_centerline.py
 ```
 
 Run all demos from the repository root.
@@ -111,12 +119,31 @@ track_widths = edges.widths
 
 `Edges` also contains `blue_idx`, `yellow_idx`, and `midpoints`, which link each estimated centreline point to its paired blue and yellow cones.
 
+Build an ordered centreline from the detected midpoints:
+
+```python
+from planner.triangulation import blue_yellow_edges
+from planner.centerline import build_centerline
+
+edges = blue_yellow_edges(cones)
+path = build_centerline(
+    edges,
+    start=(0.0, 0.0),
+    heading=(1.0, 0.0),
+    max_hop=6.0,
+    max_turn_deg=90.0,
+)
+```
+
+`build_centerline` starts with the car position and greedily advances to nearby midpoints ahead of the current heading. This avoids the ordering problems that occur when a simple x-coordinate sort is used on a track containing bends. `order_by_x` remains available as a simple baseline; `order_greedy` can also be used directly when a list of midpoint coordinates is already available.
+
 ## Package layout
 
 - `planner/cones.py`: `Cones` observation container.
 - `planner/fake_tracks.py`: synthetic track generation.
 - `planner/transforms.py`: coordinate transformations and filtering.
 - `planner/triangulation.py`: Delaunay triangulation and blue-yellow matching.
+- `planner/centerline.py`: heading-aware centreline ordering.
 - `scripts/`: runnable demos.
 - `tests/`: pytest coverage for synthetic tracks, transforms, and triangulation.
 

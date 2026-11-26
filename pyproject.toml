@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7.4,<9"]
+visualize = ["matplotlib>=3.7,<4"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

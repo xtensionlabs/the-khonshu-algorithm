@@ -13,6 +13,16 @@ python examples/benchmark_synthetic.py --planner stage_a --iterations 50
 
 The six shared cases cover straight, left/right turns, a missing boundary, unknown cone colors, and false positives. `test_stage_a.py` also checks world-frame transforms, vehicle-footprint clearance around four displaced orange corner cones, graph evidence, and explicit stop behavior. To compare the retained FaSTTUBe baseline, use `--planner fasttube` for the renderer and benchmark.
 
+## Full-circuit 3D overview
+
+Install the optional visualization dependency with `python -m pip install -e ".[visualize]"`, then run:
+
+```powershell
+python examples/visualize_full_circuit_3d.py
+```
+
+This creates `artifacts/full-circuit-3d.png` and a self-contained, rotatable `artifacts/full-circuit-3d.html` from a deterministic closed course. Stage A is replayed at poses around the course with an 18 m observation window, keeping far-side cones out of each local triangulation. The output overlays its safety-validated local centreline segments and Delaunay edges on the dummy cones. The track remains planar and triangulation is computed in XY; cone height is shown in the 3D view for perspective. This is a geometry visualization, not a full-lap vehicle simulation.
+
 ## EUFS lap in WSL
 
 The WSL environment needs ROS 2 with Gazebo/RViz GUI support (WSLg or an X server), the built EUFS workspace, and a Python environment with the project and ROS message dependencies. The launcher uses these defaults:

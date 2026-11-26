@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import argparse
 import html
+import math
 from pathlib import Path
 
-from khonshu import LocalPlanner, PlannerConfig, StageAConfig, StageAPlanner
+from khonshu import (
+    LocalPlanner,
+    PlannerConfig,
+    StageAConfig,
+    StageAPlanner,
+    VehicleState,
+)
 from khonshu.scenarios import synthetic_scenarios
 
 
@@ -24,6 +31,19 @@ def _svg_xy(x: float, y: float, bounds: tuple[float, float, float, float]) -> tu
     return MARGIN + (x - x_min) * scale, HEIGHT - MARGIN - (y - y_min) * scale
 
 
+def _local_to_world(
+    xy: tuple[float, float], state: VehicleState
+) -> tuple[float, float]:
+    """Convert a planner debug point from vehicle coordinates to map coordinates."""
+
+    cosine = math.cos(state.yaw_rad)
+    sine = math.sin(state.yaw_rad)
+    return (
+        state.x + cosine * xy[0] - sine * xy[1],
+        state.y + sine * xy[0] + cosine * xy[1],
+    )
+
+
 def make_svg(scenario_name: str, planner_name: str = "stage_a") -> tuple[str, str]:
     cones, state = synthetic_scenarios()[scenario_name]
     if planner_name == "fasttube":
@@ -32,6 +52,20 @@ def make_svg(scenario_name: str, planner_name: str = "stage_a") -> tuple[str, st
     else:
         planner = StageAPlanner(StageAConfig(maximum_cycle_time_ms=5000.0))
     trajectory = planner.plan(cones, state)
+    debug_geometry = getattr(planner, "last_debug_geometry", {})
+    delaunay_edges = [
+        (
+            _local_to_world(first, state),
+            _local_to_world(second, state),
+        )
+        for first, second in debug_geometry.get("delaunay_edges_local", [])
+    ]
+    delaunay_enabled = planner_name == "stage_a"
+    title_suffix = (
+        " — Delaunay mesh and centreline"
+        if delaunay_enabled
+        else " — centreline comparison"
+    )
 
     all_x = [cone.x for cone in cones] + [state.x]
     all_y = [cone.y for cone in cones] + [state.y]
@@ -56,8 +90,15 @@ def make_svg(scenario_name: str, planner_name: str = "stage_a") -> tuple[str, st
     elements = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
-        f'<text x="{MARGIN}" y="34" font-family="sans-serif" font-size="21" font-weight="700">Khonshu 2D {html.escape(planner_name)}: {html.escape(scenario_name)}</text>',
+        f'<text x="{MARGIN}" y="34" font-family="sans-serif" font-size="21" font-weight="700">Khonshu 2D {html.escape(planner_name)}: {html.escape(scenario_name)}{title_suffix}</text>',
     ]
+
+    for first, second in delaunay_edges:
+        x1, y1 = _svg_xy(first[0], first[1], bounds)
+        x2, y2 = _svg_xy(second[0], second[1], bounds)
+        elements.append(
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#7c3aed" stroke-width="1.6" stroke-opacity="0.72"/>'
+        )
 
     for cone in cones:
         px, py = _svg_xy(cone.x, cone.y, bounds)
@@ -70,10 +111,16 @@ def make_svg(scenario_name: str, planner_name: str = "stage_a") -> tuple[str, st
             for point in trajectory.points
         )
         elements.append(f'<polyline points="{path_points}" fill="none" stroke="#16a34a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>')
-        outcome = f"valid centerline: {len(trajectory.points)} points"
+        outcome = (
+            f"valid centerline: {len(trajectory.points)} points"
+            + (f"; Delaunay edges: {len(delaunay_edges)}" if delaunay_enabled else "")
+        )
         outcome_color = "#15803d"
     else:
-        outcome = f"STOP: {html.escape(trajectory.reason)}"
+        outcome = (
+            f"STOP: {html.escape(trajectory.reason)}"
+            + (f"; Delaunay edges: {len(delaunay_edges)}" if delaunay_enabled else "")
+        )
         outcome_color = "#b91c1c"
 
     sx, sy = _svg_xy(state.x, state.y, bounds)
@@ -81,12 +128,25 @@ def make_svg(scenario_name: str, planner_name: str = "stage_a") -> tuple[str, st
     elements.append(f'<text x="{MARGIN}" y="{HEIGHT - 24}" font-family="sans-serif" font-size="16" fill="{outcome_color}">{outcome}; {trajectory.compute_time_ms:.2f} ms</text>')
 
     legend_y = 66
-    for index, (label, color) in enumerate(colors.items()):
-        lx = MARGIN + index * 135
-        elements.append(f'<circle cx="{lx}" cy="{legend_y}" r="5" fill="{color}"/>')
-        elements.append(f'<text x="{lx + 10}" y="{legend_y + 5}" font-family="sans-serif" font-size="13">{label}</text>')
-    elements.append(f'<line x1="{MARGIN + 690}" y1="{legend_y}" x2="{MARGIN + 714}" y2="{legend_y}" stroke="#16a34a" stroke-width="4"/>')
-    elements.append(f'<text x="{MARGIN + 720}" y="{legend_y + 5}" font-family="sans-serif" font-size="13">planned path</text>')
+    legend_items = [
+        ("blue cone", "#2563eb", "circle"),
+        ("yellow cone", "#eab308", "circle"),
+        ("orange cone", "#f97316", "circle"),
+        ("unknown cone", "#6b7280", "circle"),
+    ]
+    if delaunay_enabled:
+        legend_items.append(("Delaunay edge", "#7c3aed", "line"))
+    legend_items.append(("centreline", "#16a34a", "line"))
+    for index, (label, color, shape) in enumerate(legend_items):
+        lx = MARGIN + index * 150
+        if shape == "circle":
+            elements.append(f'<circle cx="{lx}" cy="{legend_y}" r="5" fill="{color}"/>')
+        else:
+            width = 4 if label == "centreline" else 2
+            elements.append(
+                f'<line x1="{lx - 8}" y1="{legend_y}" x2="{lx + 8}" y2="{legend_y}" stroke="{color}" stroke-width="{width}"/>'
+            )
+        elements.append(f'<text x="{lx + 12}" y="{legend_y + 5}" font-family="sans-serif" font-size="13">{label}</text>')
     elements.append("</svg>")
     return "\n".join(elements), trajectory.reason
 

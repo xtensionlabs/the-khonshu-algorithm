@@ -15,7 +15,7 @@ Use Python 3.9 or newer in a virtual environment:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[test]"
+python -m pip install -e ".[test,visualize]"
 ```
 
 On Linux, activate with `source .venv/bin/activate` instead.
@@ -46,8 +46,11 @@ Positions are meters in a right-handed frame (`x` forward, `y` left); yaw is rad
 ```powershell
 python -m pytest tests/test_stage_a.py -q
 python examples/visualize_synthetic.py --planner stage_a --scenario false_positives
+python examples/visualize_full_circuit_3d.py
 python examples/benchmark_synthetic.py --planner stage_a --iterations 50
 ```
+
+The full-circuit visualization replays the local Stage A planner at poses around a synthetic closed course and saves `artifacts/full-circuit-3d.png` plus a self-contained, rotatable `artifacts/full-circuit-3d.html`. Cone height is shown for perspective; track geometry and Delaunay triangulation remain in the XY plane.
 
 For the visible EUFS rectangle lap, run `bash ros2/khonshu_eufs/run_eufs_stage_a_lap.sh` from the repository root in WSL. The helper opens Gazebo and RViz as two windows by default. RViz shows the live Delaunay mesh, Voronoi ridges, cross-sections, center candidates, graph, selected Dijkstra route, cones, and centerline. Set `KHONSHU_SHOW_RVIZ=0` only when you want a Gazebo-only run. The follower uses a 1.0 m lookahead to reduce corner cutting. After a successful lap, the helper leaves both windows open for 10 seconds; adjust this with `KHONSHU_POST_LAP_HOLD_S`. See [testing instructions](docs/testing.md), [architecture and limits](docs/architecture.md), and the [research reference index](docs/REFERENCES.md).
 
@@ -68,6 +71,7 @@ src/khonshu/
     planner.py             Stage A pipeline orchestration
 ros2/khonshu_eufs/         EUFS adapters, follower, launch scripts, RViz config
 tests/                     deterministic planner and geometry checks
+examples/                  synthetic visualizations and benchmarks
 docs/                      architecture, setup, validation, and references
 ```
 

@@ -107,6 +107,23 @@ def test_orange_apex_cones_are_obstacles_not_centerline_boundaries():
         assert np.min(np.linalg.norm(boundary_xy - np.asarray(second), axis=1)) < 1e-6
 
 
+def test_topology_indices_stay_aligned_after_out_of_window_cones_are_filtered():
+    cones, state = synthetic_scenarios()["straight"]
+    out_of_window = (
+        Cone(-10.0, 2.0, ConeColor.BLUE),
+        Cone(-10.0, -2.0, ConeColor.YELLOW),
+    )
+    planner = StageAPlanner(StageAConfig(maximum_cycle_time_ms=1000.0))
+
+    trajectory = planner.plan((*out_of_window, *cones), state)
+
+    assert trajectory.valid, trajectory.reason
+    visible_xy = np.asarray([(cone.x, cone.y) for cone in cones])
+    for first, second, _midpoint in planner.last_debug_geometry["cross_sections_local"]:
+        assert np.min(np.linalg.norm(visible_xy - np.asarray(first), axis=1)) < 1e-6
+        assert np.min(np.linalg.norm(visible_xy - np.asarray(second), axis=1)) < 1e-6
+
+
 def test_stage_a_deadline_overrun_requests_an_empty_stop_trajectory():
     cones, state = synthetic_scenarios()["straight"]
     planner = StageAPlanner(StageAConfig(maximum_cycle_time_ms=1e-12))

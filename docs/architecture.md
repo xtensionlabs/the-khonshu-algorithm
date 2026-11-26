@@ -23,6 +23,25 @@ EUFS / FSDS / real-car adapter
 
 The core has no ROS dependency. It accepts cone locations and vehicle pose in a common frame, converts the observations into a vehicle-aligned planning frame, then converts the accepted trajectory back to the input frame. Adapters own timestamps, ROS messages, TF, and command topics. The EUFS adapter currently uses timestamp-matched ground-truth odometry for development; FSDS and real-car adapters remain future work.
 
+## Repository topology and extension points
+
+The `khonshu` package keeps shared data types and planning algorithms independent from ROS. Stage A is split by responsibility so a change to one planning step has a narrow home:
+
+| Module | Responsibility |
+|---|---|
+| `src/khonshu/types.py` | Shared cone, vehicle-state, and trajectory contracts |
+| `src/khonshu/stage_a/config.py` | Geometry, vehicle footprint, and runtime settings |
+| `src/khonshu/stage_a/topology.py` | Observation filtering, Delaunay evidence, cross-sections, and Voronoi candidates |
+| `src/khonshu/stage_a/search.py` | Candidate graph construction, edge safety, and Dijkstra route selection |
+| `src/khonshu/stage_a/safety.py` | Swept-footprint clearance and track-section checks |
+| `src/khonshu/stage_a/smoothing.py` | Cubic spline and checked polyline sampling |
+| `src/khonshu/stage_a/planner.py` | Stage A orchestration and the public `StageAPlanner` API |
+| `ros2/khonshu_eufs/` | ROS message conversion, live diagnostics, pure-pursuit validation, and RViz setup |
+
+Import `StageAConfig` and `StageAPlanner` from `khonshu` or `khonshu.stage_a`; both remain stable public entry points. Add new topology proposals in `stage_a/topology.py`, search policies in `stage_a/search.py`, safety rules in `stage_a/safety.py`, and interpolation methods in `stage_a/smoothing.py`. Keep shared trajectory types in `types.py` and ROS-specific code in the adapter directory.
+
+Stage B speed profiling should be a separate module that consumes a validated Stage A trajectory and returns adjusted target speeds. It must not change Stage A's centerline search or weaken its stop behavior. A future Stage C global racing-line optimizer can use the same adapter and trajectory boundary without coupling its optimization code to ROS.
+
 ## Stage A — track geometry and centerline
 
 `StageAPlanner` is the default ROS preview planner and has an independent `LocalPlanner`/FaSTTUBe comparison path.

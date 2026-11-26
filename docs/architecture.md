@@ -1,42 +1,53 @@
 # Khonshu v0.1 architecture
 
-## Pipeline
+## Planning pipeline
 
 ```text
 EUFS / FSDS / real-car adapter
               |
-   Cone[] + VehicleState
+      Cone[] + VehicleState
               |
- LocalPlanner (ROS-independent)
-   FaSTTUBe sorting, matching,
-   virtual-cone and spline pipeline
+    StageAPlanner (core)
+  local geometry in vehicle frame
+  Delaunay + bounded-radius cone graph
+  cross-track midpoint candidates
+  Voronoi medial-axis support
+  cost-based Dijkstra route search
+  spline + cone, vehicle-footprint, and boundary checks
               |
-  Trajectory (x, y, s, curvature,
-              constant target speed)
+ Trajectory (global-frame x/y, s,
+             curvature, target speed)
               |
-EUFS / FSDS / real-car adapter
+   simulator or vehicle controller
 ```
 
-The adapter layer is the next integration task and is not implemented on this branch yet. It will own ROS topics, message types, TF lookups, and visualization. The core owns geometry, planning behavior, units, frame identifiers, validity checks, and the stop decision. The core accepts global-frame positions and yaw in radians; adapters must transform cone observations to the vehicle/map frame at the observation timestamp before planning.
+The core has no ROS dependency. It accepts cone locations and vehicle pose in a common frame, converts the observations into a vehicle-aligned planning frame, then converts the accepted trajectory back to the input frame. Adapters own timestamps, ROS messages, TF, and command topics. The EUFS adapter currently uses timestamp-matched ground-truth odometry for development; FSDS and real-car adapters remain future work.
 
-## v0.1 behavior
+## Stage A — track geometry and centerline
 
-- Uses the MIT-licensed FaSTTUBe Formula Student planner as the centerline and spline backend. It can use unknown cone colors and can infer a missing boundary through virtual cones.
-- Keeps one backend instance alive so its path continuity and previous-path recovery work as designed.
-- Publishes only finite trajectories with increasing path distance, at least two waypoints, enough sorted boundary evidence, and a start point within 5 m of the vehicle.
-- Rejects a path whose sampled points approach an observed cone closer than the configurable 0.75 m clearance. This is a first collision screen, not a replacement for swept-footprint or track-boundary validation.
-- Uses a constant 2 m/s target speed by default.
-- Requests an emergency stop with an empty path if cone evidence is insufficient, the backend errors, or the resulting path fails validation. Consumers must treat `emergency_stop` as a stop command and must not track an empty path.
-- Requests an emergency stop when a cycle exceeds the default 30 ms planning budget; this detects an overrun after the calculation, so the ROS adapter still needs a control-side watchdog for missed deadlines.
-- Calls `warm_up()` before a timed run or drive. It runs all shared synthetic cases to precompile branch-specific Numba paths, then resets the stateful backend. The upstream project reports a 30–60 second first-call Numba compilation delay, so the first plan is not a real-time timing sample.
-- Uses [`khonshu.scenarios.synthetic_scenarios`](../src/khonshu/scenarios.py) and [`examples/benchmark_synthetic.py`](../examples/benchmark_synthetic.py) for deterministic no-ROS straight, left/right turn, missing-boundary, unknown-color, and false-positive cases; simulator benchmarks must still record lap time and cone contacts.
+`StageAPlanner` is the default ROS preview planner and has an independent `LocalPlanner`/FaSTTUBe comparison path.
 
-## Roadmap
+1. **Build cone topology.** SciPy Delaunay edges identify locally supported cone neighbors. The planner also considers geometrically plausible cone pairs inside a 5 m radius. It does not use Delaunay as a hard gate: the CLC lane-detection paper describes how false-positive cones can remove a correct boundary edge from a Delaunay-only graph.
+2. **Propose cross-track sections.** Opposite blue/yellow colors are a soft hint. Unknown and mislabeled cones are eligible when their geometry supports a cross-track pair. Pairs are filtered by plausible track width, distance, and orientation; their midpoints are centerline candidates.
+3. **Add Voronoi support.** Finite Voronoi vertices near supported cross-track midpoints add between-section medial-axis candidates. Unbounded regions and vertices unsupported by cone pairs are excluded.
+4. **Choose a continuous route.** A directed candidate graph connects nearby points. Dijkstra minimizes distance, candidate-quality, and heading-change costs, then selects the best reachable observation horizon. This is a center-candidate search; it is not a claim to reproduce CLC's two-boundary backtracking search or its learned candidate ranker.
+5. **Smooth and validate.** A chord-length parameterized cubic spline is sampled at fixed spacing. The planner checks centerline clearance and sweeps a configurable rectangular vehicle footprint along candidate edges and the final path. The default footprint is 2.4 m by 1.4 m, inflated by a 0.15 m cone radius and 0.25 m tracking margin. It also rejects paths that leave supported cross-sections, insufficient evidence, and over-budget cycles. An invalid result is an empty trajectory with `emergency_stop=True`.
 
-1. **v0.1 integration:** wire the shared types to EUFS and reproduce a clean lap; add identical replay inputs for the planner branches.
-2. **Topology comparisons:** benchmark the FaSTTUBe baseline against Delaunay midpoint extraction and the deterministic CLC graph-search method on noisy and missing-cone cases. Keep whichever gives the best safety and latency across the team's recorded inputs.
-3. **Dynamics:** replace constant speed with a friction/G-G constrained forward-backward velocity pass; retain a hard vehicle speed and acceleration cap.
-4. **Global planning:** once mapping and loop closure are reliable, evaluate a minimum-curvature or minimum-time racing line with track-boundary constraints and an OSQP formulation.
-5. **Portability gates:** replay the same serialized cone/state data through EUFS, FSDS, and hardware adapters; compare geometric output, stop decisions, latency, and collision outcomes.
+The KIT winning-team paper supports Delaunay filtering, boundary inference, cross-track midpoint control points, and spline smoothing. Voronoi support and explicit cost-based centerline search are additions in our branch, not methods attributed to that paper. See the [reference index](REFERENCES.md) and the paper saved in `docs/`.
 
-The FaSTTUBe backend is a strong starting point, not a claim that this version is already competitive or safe for a real vehicle. Sensor uncertainty, braking feasibility, vehicle dynamics, and hardware latency still require validation before a track run.
+## v0.1 limits and EUFS validation
+
+- Stage A uses a constant 1.0 m/s target speed. The EUFS pure-pursuit validation node is separately capped at 0.8 m/s and publishes `AckermannDriveStamped` to `/cmd` in velocity mode.
+- The planner enforces a configurable 0.8 m centerline clearance and a rectangular swept-footprint check. The footprint dimensions are a conservative v0.1 model and should be matched to the EUFS collision mesh and measured car before hardware use; these checks are not a complete vehicle safety case.
+- The default planning deadline is 30 ms. The check runs after computation, so a consumer must stop on an empty or stale path. The EUFS follower does this and also stops on stale odometry.
+- `run_eufs_stage_a_lap.sh` starts the visible EUFS rectangle course, the Stage A planner, and the low-speed follower. Orange cones are collision obstacles, not track-boundary samples, so displaced apex markers cannot attract the centerline. RViz opens by default and shows the planner's Delaunay, Voronoi, midpoint, candidate graph, and selected Dijkstra route markers; set `KHONSHU_SHOW_RVIZ=0` to disable it. The follower uses a shorter 1.0 m lookahead to reduce corner cutting. The helper uses a 200 ms cycle deadline to tolerate WSL GUI scheduling, while the planner default remains 30 ms. It exits after the vehicle returns near its start pose after a minimum travel distance, or reports a timeout. The test is a simulator integration result only.
+- `LocalPlanner` retains the MIT-licensed FaSTTUBe pipeline for branch comparison. It is not silently used as a fallback when Stage A rejects a plan.
+
+## Later stages
+
+1. **Robust topology:** add deterministic boundary-pair/backtracking search with explicit lane-width and turn constraints; replay real perception logs with false positives, missing boundaries, and color errors. Compare with the current radius/Delaunay graph and FaSTTUBe.
+2. **Dynamics and speed:** add a friction/G-G constrained forward-backward velocity pass, braking feasibility, and vehicle-specific limits.
+3. **Global mapping and racing line:** after localisation and loop closure are reliable, evaluate minimum-curvature/minimum-time optimization with track-boundary constraints and OSQP.
+4. **Portability:** replay identical serialized cone/state inputs through EUFS, FSDS, and hardware adapters and compare path geometry, stop decisions, latency, and collision outcomes.
+
+The winning-team report describes a larger stack that also includes mapping, a G-G-aware velocity profile, and minimum-curvature trajectory optimization. Those are later-stage capabilities; they are not claimed for this Stage A v0.1 planner.

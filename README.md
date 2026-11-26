@@ -1,12 +1,12 @@
 # Khonshu Algorithm
 
-Path planning for Strathmore Racing Club's Formula Student autonomous car. Khonshu turns cone observations and vehicle state into a trajectory for Control.
+Portable path planning for Strathmore Racing Club's Formula Student autonomous car. The core maps partial cone observations and vehicle state to a checked trajectory; ROS adapters connect it to simulators and, later, the real vehicle.
 
-## v0.1 baseline
+## Stage A v0.1
 
-The first baseline wraps FaSTTUBe's open-source Formula Student path planner. Its cone sorting and matching pipeline can use known and unknown cone colors, and it estimates a spline path with curvature. Khonshu adds a stable input/output contract, frame and unit conventions, a conservative constant target speed, and an explicit stop request when the input or result is not trustworthy.
+The active Stage A planner combines Delaunay-supported cone topology, a 5 m bounded-radius cone-pair graph, cross-track midpoint and supported Voronoi candidates, cost-based Dijkstra route selection, cubic-spline smoothing, and cone/cross-section validation. Blue/yellow colors are soft hints, unknown cones may contribute geometrically, and orange cones are treated as interior obstacles by default. The retained FaSTTUBe planner is available as an independent comparison backend.
 
-The planner core has no ROS dependency. The ROS 2 adapters are not in this branch yet; when added, EUFS, FSDS, and real-car nodes will convert their messages to `Cone` and `VehicleState`, call `LocalPlanner`, then convert `Trajectory` back to native message types. That keeps algorithm behavior separate from simulator topic names. Paths that pass within 0.75 m of an observed cone or cycles that exceed the default 30 ms budget return an explicit stop request instead of an untrusted or stale trajectory. Tune the clearance against the car width and perception uncertainty.
+The ROS-independent Python core is in `src/khonshu`. The EUFS adapter uses timestamp-matched cone and odometry data; the EUFS helper opens the Gazebo GUI and runs a low-speed pure-pursuit follower to validate an actual lap. FSDS and real-car adapters are not implemented yet.
 
 ## Setup
 
@@ -16,19 +16,16 @@ Use Python 3.9 or newer in a virtual environment:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[test]"
-pytest
 ```
 
-On Linux, activate the environment with `source .venv/bin/activate` instead. The vendored upstream library's first call may compile Numba functions; call `LocalPlanner.warm_up()` while the car is stationary before timing or driving.
+On Linux, activate with `source .venv/bin/activate` instead.
 
 ## Minimal use
 
 ```python
-from khonshu import Cone, ConeColor, LocalPlanner, VehicleState
+from khonshu import Cone, ConeColor, StageAPlanner, VehicleState
 
-planner = LocalPlanner()
-planner.warm_up()
-
+planner = StageAPlanner()
 cones = [
     *[Cone(x, 2.0, ConeColor.BLUE) for x in (3.0, 6.0, 9.0, 12.0)],
     *[Cone(x, -2.0, ConeColor.YELLOW) for x in (3.0, 6.0, 9.0, 12.0)],
@@ -42,15 +39,16 @@ else:
     print("Waypoints:", len(trajectory.points))
 ```
 
-Coordinates are meters in a right-handed map frame: `x` forward, `y` left, and yaw counter-clockwise from +x. Cones and vehicle state in a call must use the same frame. v0.1 uses a fixed target speed of 2 m/s; it does not yet model braking, tire limits, or a G-G diagram.
+Positions are meters in a right-handed frame (`x` forward, `y` left); yaw is radians counter-clockwise from +x. The planner searches in a vehicle-aligned frame and returns the accepted path in the input frame. Stage A uses a constant 1.0 m/s target speed and a default 30 ms planning deadline. The EUFS follower is separately limited to 0.8 m/s.
 
-## Project notes
+## Run and compare
 
-- [Architecture and v0.1 limits](docs/architecture.md)
-- [Research and implementation references](docs/REFERENCES.md)
-- [Local v0.1 benchmark results](benchmarks/baseline-v0.1.md)
-- [Vendored upstream provenance and license](third_party/ft-fsd-path-planning/UPSTREAM.md)
+```powershell
+python -m pytest tests/test_stage_a.py -q
+python examples/visualize_synthetic.py --planner stage_a --scenario false_positives
+python examples/benchmark_synthetic.py --planner stage_a --iterations 50
+```
 
-Run the shared 2D scenarios with `python -m pytest tests/test_vendor_smoke.py -m integration`. Run the latency baseline with `python examples/benchmark_synthetic.py --iterations 50`. It reports warm-up separately from steady-state p50/p95/max latency and cycles over the 30 ms deadline across straight, turning, missing-boundary, unknown-color, and false-positive cases. Narrow a rerun with `--scenario missing_inside_boundary --iterations 100`.
+For the visible EUFS rectangle lap, run `bash ros2/khonshu_eufs/run_eufs_stage_a_lap.sh` from the repository root in WSL. The helper opens Gazebo and RViz as two windows by default. RViz shows the live Delaunay mesh, Voronoi ridges, cross-sections, center candidates, graph, selected Dijkstra route, cones, and centerline. Set `KHONSHU_SHOW_RVIZ=0` only when you want a Gazebo-only run. The follower uses a 1.0 m lookahead to reduce corner cutting. After a successful lap, the helper leaves both windows open for 10 seconds; adjust this with `KHONSHU_POST_LAP_HOLD_S`. See [testing instructions](docs/testing.md), [architecture and limits](docs/architecture.md), and the [research reference index](docs/REFERENCES.md).
 
-The reported upstream timing is a reference, not a Khonshu performance claim. Benchmark on the target EUFS, FSDS, and real-car computers after warm-up. Track completion, cone contacts, planning latency, and stop requests under the same track and sensor inputs.
+The local FaSTTUBe source provenance and license are recorded in `third_party/ft-fsd-path-planning/UPSTREAM.md`. Its output is not a silent fallback: Stage A rejects an invalid plan by returning an empty trajectory and an explicit stop reason.

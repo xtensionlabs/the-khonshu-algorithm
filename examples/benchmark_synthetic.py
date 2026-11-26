@@ -11,13 +11,20 @@ from time import perf_counter
 import numpy as np
 import scipy
 
-from khonshu import LocalPlanner, VehicleState
+from khonshu import (
+    LocalPlanner,
+    PlannerConfig,
+    StageAConfig,
+    StageAPlanner,
+    VehicleState,
+)
 from khonshu.scenarios import synthetic_scenarios
 
 
 def main() -> None:
     all_scenarios = synthetic_scenarios()
     parser = argparse.ArgumentParser()
+    parser.add_argument("--planner", choices=("stage_a", "fasttube"), default="stage_a")
     parser.add_argument("--iterations", type=int, default=50)
     parser.add_argument("--deadline-ms", type=float, default=30.0)
     parser.add_argument(
@@ -36,9 +43,19 @@ def main() -> None:
     selected_names = args.scenario or list(all_scenarios)
     for scenario_name in selected_names:
         cones, initial_state = all_scenarios[scenario_name]
-        planner = LocalPlanner()
+        if args.planner == "stage_a":
+            planner = StageAPlanner(
+                StageAConfig(maximum_cycle_time_ms=args.deadline_ms)
+            )
+        else:
+            planner = LocalPlanner(
+                PlannerConfig(maximum_cycle_time_ms=args.deadline_ms)
+            )
         warmup_started = perf_counter()
-        planner.warm_up()
+        if isinstance(planner, LocalPlanner):
+            planner.warm_up()
+        else:
+            planner.plan(cones, initial_state)
         warmup_seconds = perf_counter() - warmup_started
 
         latencies_ms = []
@@ -79,12 +96,13 @@ def main() -> None:
     report = {
         "iterations": args.iterations,
         "deadline_ms": args.deadline_ms,
+        "planner": args.planner,
         "scenarios": scenario_reports,
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "numpy": np.__version__,
         "scipy": scipy.__version__,
-        "target_speed_mps": 2.0,
+        "target_speed_mps": 1.0 if args.planner == "stage_a" else 2.0,
     }
     print(json.dumps(report, indent=2, sort_keys=True))
 

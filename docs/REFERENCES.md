@@ -4,11 +4,15 @@ This index keeps the team's source material in one place. Open a title to visit 
 
 ## System and engineering workflow
 
+The winning-team paper is also saved locally: [open the PDF](The%20Software%20Stack%20that%20Won%20Formula%20Student%20Driverless.pdf).
+
 - [The Software Stack That Won the Formula Student Driverless Competition](https://arxiv.org/abs/2210.10933) — GraphSLAM, Delaunay lane-boundary detection, spline trajectories, and a G-G-aware minimum-curvature racing line.
 - [Python `src/` layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) — package layout used for the Khonshu core.
 - [pytest parametrized tests](https://docs.pytest.org/en/stable/how-to/parametrize.html) — repeatable scenarios for geometry, sensor loss, and planner failures.
 
 ## Track estimation and centerline
+
+- [SciPy Voronoi diagrams](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.Voronoi.html) - finite vertices and ridge data used to add supported medial-axis candidates.
 
 - [ROS REP-103](https://github.com/ros-infrastructure/rep/blob/master/rep-0103.rst) — coordinate conventions and SI units used by the shared types.
 - [ROS 2 TF2 listener tutorial](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Listener-Py.html) — transform cone detections at the correct timestamp in simulator and vehicle adapters.

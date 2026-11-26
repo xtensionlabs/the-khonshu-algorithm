@@ -43,3 +43,22 @@ def straight_then_turn(
         yellow = allpts[n:][keep[n:]]
 
     return Cones(blue, yellow), centre
+
+
+def centre_pose(s, straight=18.0, radius=10.0):
+    """(x, y, heading) of the true centreline s metres along the track."""
+    if s <= straight:
+        return float(s), 0.0, 0.0
+    a = (s - straight) / radius
+    return straight + radius * np.sin(a), radius * (1.0 - np.cos(a)), a
+
+
+def dense_centreline(total=45.0, step=0.05, **kw):
+    """Very finely sampled true centreline, shape (N, 2)."""
+    return np.array([centre_pose(s, **kw)[:2] for s in np.arange(0.0, total, step)])
+
+
+def dist_to_curve(points, dense):
+    """Distance from each point (K,2) to the nearest sample of `dense`."""
+    d = np.linalg.norm(points[:, None, :] - dense[None, :, :], axis=2)
+    return d.min(axis=1)

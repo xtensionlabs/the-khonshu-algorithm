@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>khonshu_planner</name>
+  <version>0.1.0</version>
+  <description>Khonshu FS-AI path planning package (v0.1 baseline).</description>
+  <maintainer email="ivan@khonshu.local">Ivan Barasa</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>eufs_msgs</exec_depend>
+  <exec_depend>ackermann_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
